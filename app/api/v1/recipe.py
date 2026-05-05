@@ -40,11 +40,39 @@ async def get_instruction(
     ):
     preferences = body.preference.model_dump() if body.preference else {}
     raw = await generate_recipe_from_ingredients(body.ingredients, preferences, lang)
-    data = extract_json(raw)
+    print("=== RAW LLM RESPONSE ===")
+    print(raw)
+    print("========================")
+    
+    # Dọn dẹp chuỗi markdown json nếu có
+    if raw.startswith("```json"):
+        raw = raw.strip()[7:]
+    if raw.endswith("```"):
+        raw = raw.strip()[:-3]
+        
+    data = extract_json(raw.strip())
+
+    raw_ingredients = data.get("ingredients", [])
+    # ingredients có thể là list[str] (format cũ) hoặc list[dict] (format mới)
+    from app.schemas.recipe import RecipeIngredientItem
+    parsed_ingredients = []
+    for item in raw_ingredients:
+        if isinstance(item, dict):
+            parsed_ingredients.append(
+                RecipeIngredientItem(
+                    name=item.get("name", ""),
+                    amount=item.get("amount", ""),
+                )
+            )
+        else:
+            # Fallback: nếu AI vẫn trả string, wrap lại
+            parsed_ingredients.append(
+                RecipeIngredientItem(name=str(item), amount="")
+            )
 
     return RecipeResponse(
-        dish=data.get("dish"),
-        ingredients=data.get("ingredients", []),
+        name=data.get("name") or data.get("dish"),  # tương thích cả format cũ
+        ingredients=parsed_ingredients,
         steps=data.get("steps", []),
         time=data.get("time"),
     )
